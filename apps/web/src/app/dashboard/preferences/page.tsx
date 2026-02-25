@@ -38,7 +38,7 @@ export default function PreferencesPage() {
       .from('job_preferences')
       .select('*')
       .single()
-      .then(({ data, error }) => {
+      .then(({ data, error }: { data: { keywords?: string[]; locations?: string[]; remote_only?: boolean; min_salary?: number | null; industries?: string[]; experience_level?: string[]; match_threshold?: number } | null; error: { message: string; code?: string } | null }) => {
         if (error && error.code !== 'PGRST116') {
           toast.error(error.message);
           return;

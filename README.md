@@ -41,7 +41,7 @@ Edit `.env.local` (for local web dev you only need the `NEXT_PUBLIC_*` and `GEMI
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (web)
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (worker; service role bypasses RLS)
 - `GEMINI_API_KEY` (worker; match scoring)
-- `OPENAI_API_KEY` (worker; required by browser-use-node for the LLM agent)
+- `OPENAI_API_KEY` (worker; required by browser-use-node for the LLM agent). **Optional:** you can use **Gemini** instead: set `OPENAI_API_KEY` to your Gemini API key and `OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai` so the agent uses Gemini via the OpenAI-compatible API. If unset, the worker still runs but automation jobs will fail with a clear message.
 
 ### 4. Run web app (port 5000)
 
@@ -49,7 +49,7 @@ Edit `.env.local` (for local web dev you only need the `NEXT_PUBLIC_*` and `GEMI
 npm run dev
 ```
 
-Open [http://localhost:5000](http://localhost:5000). Sign up, then use Dashboard to add resumes, set preferences, and create auto-apply jobs.
+Open [http://localhost:5000](http://localhost:5000). Use **Sign in** to log in with Google or email (magic link). After auth, use Dashboard to add resumes, set preferences, and create auto-apply jobs.
 
 ### 5. Run worker
 
@@ -91,6 +91,7 @@ The worker polls for `pending` jobs, runs **browser-use** (browser-use-node) on 
 | `npm run build`| Build web app              |
 | `npm run start`| Start production web      |
 | `npm run lint` | Lint workspaces            |
+| `npm run lint:fix` | Lint and fix (web)     |
 | `npm run typecheck` | TypeScript check     |
 | `npm run format`| Prettier format           |
 | `npm run db:seed` | Seed demo user data (from apps/web) |

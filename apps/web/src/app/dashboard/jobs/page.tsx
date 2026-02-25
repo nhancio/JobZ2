@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import type { AutoApplyJob } from '@/lib/types/database';
 import { Clock, ExternalLink } from 'lucide-react';
 
 export default async function JobsPage() {
@@ -54,7 +55,7 @@ export default async function JobsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white">
-            {jobs?.map((job) => (
+            {jobs?.map((job: AutoApplyJob) => (
               <tr key={job.id}>
                 <td className="px-5 py-4">
                   <div>

@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { data: flags } = await supabase.from('feature_flags').select('key, enabled').in('key', ['automation_enabled', 'dry_run_enabled']);
-    const automationEnabled = flags?.find((f) => f.key === 'automation_enabled')?.enabled ?? false;
+    const automationEnabled = flags?.find((f: { key: string; enabled: boolean }) => f.key === 'automation_enabled')?.enabled ?? false;
     if (!automationEnabled && !parsed.data.dry_run) {
       return NextResponse.json({ error: 'Automation is currently disabled' }, { status: 403 });
     }

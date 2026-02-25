@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import type { AppliedJob } from '@/lib/types/database';
 import { ExternalLink } from 'lucide-react';
 
 export default async function AppliedPage() {
@@ -26,7 +27,7 @@ export default async function AppliedPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white">
-            {applied?.map((a) => (
+            {applied?.map((a: AppliedJob) => (
               <tr key={a.id}>
                 <td className="px-5 py-4">
                   <p className="font-medium text-slate-900">{a.job_title || 'Untitled'}</p>

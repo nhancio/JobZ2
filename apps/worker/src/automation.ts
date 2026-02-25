@@ -35,6 +35,23 @@ export async function runLinkedInEasyApply(
     onLog(entry);
   };
 
+  if (!config.effectiveLlmKey) {
+    add('warn', 'No LLM key: set GEMINI_API_KEY or OPENAI_API_KEY to run automation.');
+    return {
+      success: false,
+      error: 'Set GEMINI_API_KEY (or OPENAI_API_KEY) to run automation.',
+      progress: 0,
+      logs,
+    };
+  }
+
+  // Use Gemini when OPENAI_API_KEY is not set: point OpenAI client to Gemini's compatible endpoint
+  if (config.openaiCompatibleBaseUrl) {
+    process.env.OPENAI_API_KEY = config.effectiveLlmKey;
+    process.env.OPENAI_BASE_URL = config.openaiCompatibleBaseUrl;
+    add('info', 'Using Gemini for browser agent (OpenAI-compatible API).');
+  }
+
   const task = dryRun
     ? `Open this LinkedIn job page: ${jobUrl}. Click the "Easy Apply" button. Do NOT fill out the form or click Submit - stop after the Easy Apply modal opens. Report when done.`
     : `Open this LinkedIn job page: ${jobUrl}. Click "Easy Apply" and complete the application form step by step. Click "Next" through each step until you see "Submit", then click Submit to apply. Report when the application is submitted.`;

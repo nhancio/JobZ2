@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import type { Resume } from '@/lib/types/database';
 import { FileText, Plus } from 'lucide-react';
 
 export default async function ResumesPage() {
@@ -26,7 +27,7 @@ export default async function ResumesPage() {
         </Link>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {resumes?.map((r) => (
+        {resumes?.map((r: Resume) => (
           <Link
             key={r.id}
             href={`/dashboard/resumes/${r.id}`}

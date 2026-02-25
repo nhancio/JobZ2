@@ -2,10 +2,7 @@
   "name": "jobz2",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "apps/web",
-    "apps/worker"
-  ],
+  "workspaces": ["apps/web", "apps/worker"],
   "scripts": {
     "dev": "npm run dev --workspace=apps/web",
     "dev:worker": "npm run dev --workspace=apps/worker",
@@ -17,6 +14,9 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "test": "npm run test --workspaces --if-present",
     "db:seed": "npm run db:seed --workspace=apps/web"
+  },
+  "overrides": {
+    "tailwindcss": "3.4.14"
   },
   "devDependencies": {
     "prettier": "^3.2.5",

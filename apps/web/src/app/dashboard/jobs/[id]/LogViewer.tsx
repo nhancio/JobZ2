@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { LogEntry } from '@/lib/types/database';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 export function LogViewer({
   initialLogs,
@@ -25,7 +26,7 @@ export function LogViewer({
           table: 'auto_apply_jobs',
           filter: `id=eq.${jobId}`,
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           const newData = payload.new as { logs?: LogEntry[] };
           if (Array.isArray(newData.logs)) {
             setLogs(newData.logs);

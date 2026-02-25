@@ -26,7 +26,7 @@ export default async function DashboardPage() {
       .limit(10),
     supabase
       .from('applied_jobs')
-      .select('id, job_title, company_name, match_score, applied_at')
+      .select('id, job_title, company_name, match_score, applied_at, job_url')
       .eq('user_id', user.id)
       .order('applied_at', { ascending: false })
       .limit(5),
@@ -76,7 +76,7 @@ export default async function DashboardPage() {
             <div>
               <p className="text-sm font-medium text-slate-500">Jobs in queue</p>
               <p className="text-2xl font-bold text-slate-900">
-                {jobs?.filter((j) => j.status === 'pending' || j.status === 'running').length ?? 0}
+                {jobs?.filter((j: { status: string }) => j.status === 'pending' || j.status === 'running').length ?? 0}
               </p>
             </div>
           </div>
@@ -99,7 +99,7 @@ export default async function DashboardPage() {
           </div>
           <ul className="divide-y divide-slate-200">
             {jobs?.length ? (
-              jobs.map((job) => (
+              jobs.map((job: { id: string; job_title: string | null; company_name: string | null; status: string; progress: number; dry_run: boolean }) => (
                 <li key={job.id} className="flex items-center justify-between px-5 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-slate-900">{job.job_title || 'Untitled'}</p>
@@ -136,7 +136,7 @@ export default async function DashboardPage() {
           </div>
           <ul className="divide-y divide-slate-200">
             {applied?.length ? (
-              applied.map((a) => (
+              applied?.map((a: { id: string; job_title: string | null; company_name: string | null; match_score: number | null; applied_at: string; job_url: string }) => (
                 <li key={a.id} className="flex items-center justify-between px-5 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-slate-900">{a.job_title || 'Untitled'}</p>

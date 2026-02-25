@@ -21,7 +21,7 @@ export default function ApplyPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.from('resumes').select('*').order('is_default', { ascending: false }).then(({ data }) => setResumes(data ?? []));
+    supabase.from('resumes').select('*').order('is_default', { ascending: false }).then(({ data }: { data: Resume[] | null }) => setResumes(data ?? []));
   }, []);
 
   const onSubmit = async (data: AutoApplyJobInput) => {
