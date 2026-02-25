@@ -5,7 +5,7 @@ Enterprise-grade SaaS: structured resumes, AI job matching (Gemini), and automat
 ## Tech stack
 
 - **Web**: Next.js 14 (App Router), TypeScript, Tailwind, React Hook Form + Zod, Supabase (Auth, Postgres, Storage, Realtime), Sonner, Lucide
-- **Worker**: Node + TypeScript, Playwright (browser automation), Gemini (match scoring), Supabase
+- **Worker**: Node + TypeScript, **browser-use** (browser-use-node, LLM-powered automation), Gemini (match scoring), Supabase
 - **Package manager**: npm
 
 ## Local setup
@@ -40,7 +40,8 @@ Edit `.env.local` (for local web dev you only need the `NEXT_PUBLIC_*` and `GEMI
 
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (web)
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (worker; service role bypasses RLS)
-- `GEMINI_API_KEY` (worker + optional server-side use)
+- `GEMINI_API_KEY` (worker; match scoring)
+- `OPENAI_API_KEY` (worker; required by browser-use-node for the LLM agent)
 
 ### 4. Run web app (port 5000)
 
@@ -57,12 +58,11 @@ In a second terminal, from repo root:
 ```bash
 cd apps/worker
 npm install
-# Export SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY
-npx playwright install chromium
+# Export SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY, OPENAI_API_KEY
 npm run dev
 ```
 
-The worker polls for `pending` jobs, runs Playwright on the job URL (LinkedIn Easy Apply), streams logs to the DB, and on success records the application and optional AI match score.
+The worker polls for `pending` jobs, runs **browser-use** (browser-use-node) on the job URL: the LLM-powered agent navigates LinkedIn, clicks Easy Apply, and optionally completes and submits. Logs stream to the DB; on success the worker records the application and Gemini match score.
 
 ### 6. Testing dry run
 
@@ -74,13 +74,13 @@ The worker polls for `pending` jobs, runs Playwright on the job URL (LinkedIn Ea
 ### 7. Testing real automation (safely)
 
 - Use a test LinkedIn account.
-- Create a job with **Dry run** unchecked. The worker will attempt to fill and submit. Ensure your resume and preferences are set; the worker uses Playwright to click through the modal flow.
+- Create a job with **Dry run** unchecked. The worker will attempt to fill and submit using the browser-use agent. Ensure your resume and preferences are set.
 - Respect LinkedIn’s ToS and rate limits.
 
 ## Deployment
 
 - **Web**: Deploy to **Vercel**. Set env vars in Project Settings (e.g. `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `GEMINI_API_KEY`). Build command: `npm run build` (from root with workspaces or from `apps/web`). Output: `apps/web` if using root build.
-- **Worker**: Run on a **VM or container host** (e.g. Railway, Render, Fly.io, or a VPS). Use the provided `apps/worker/Dockerfile`: build the worker (`npm run build` in `apps/worker`), then `docker build -t jobz2-worker apps/worker` and run with env vars. The worker needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, and Playwright/Chromium dependencies (included in Dockerfile).
+- **Worker**: Run on a **VM or container host** (e.g. Railway, Render, Fly.io, or a VPS). Use the provided `apps/worker/Dockerfile`: build the worker (`npm run build` in `apps/worker`), then `docker build -t jobz2-worker apps/worker` and run with env vars. The worker needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, and Chromium (installed in Dockerfile via Playwright, which is a dependency of browser-use-node).
 
 ## Scripts
 

@@ -4,9 +4,15 @@ function env(name: string): string {
   return v;
 }
 
+function envOptional(name: string): string | undefined {
+  return process.env[name];
+}
+
 export const config = {
   supabaseUrl: env('SUPABASE_URL'),
   supabaseServiceKey: env('SUPABASE_SERVICE_ROLE_KEY'),
   geminiApiKey: env('GEMINI_API_KEY'),
+  openaiApiKey: envOptional('OPENAI_API_KEY') ?? '',
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS) || 15000,
+  headless: process.env.HEADLESS !== 'false',
 };
