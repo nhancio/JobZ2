@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build
+.next
+out
+dist
+build
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.local.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# IDE
+.idea
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage
+.nyc_output
+
+# Supabase
+supabase/.temp
+
+# Playwright
+test-results
+playwright-report
+playwright/.cache
+
+# Misc
+*.pem
+.cursor
