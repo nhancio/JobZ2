@@ -4,7 +4,35 @@ import { logger } from './logger.js';
 import { runLinkedInEasyApply } from './automation.js';
 import { getMatchScore } from './gemini.js';
 
-const MAX_RETRIES = 3;
+const DEFAULT_MAX_RETRIES = 3;
+
+async function getSystemSettings(): Promise<{ maxRetries: number; maintenanceMode: boolean }> {
+  const { data: maxRetriesRow } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'max_retries')
+    .single();
+  const raw = (maxRetriesRow?.value as number | string | null) ?? DEFAULT_MAX_RETRIES;
+  const maxRetries = typeof raw === 'number' ? raw : parseInt(String(raw), 10) || DEFAULT_MAX_RETRIES;
+
+  const { data: maintenanceRow } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'maintenance_mode')
+    .single();
+  const maintenanceMode = maintenanceRow?.value === true;
+
+  return { maxRetries, maintenanceMode };
+}
+
+async function isAiMatchingEnabled(): Promise<boolean> {
+  const { data } = await supabase
+    .from('feature_flags')
+    .select('enabled')
+    .eq('key', 'ai_matching_enabled')
+    .single();
+  return (data as { enabled?: boolean } | null)?.enabled ?? false;
+}
 
 async function fetchPendingJob(): Promise<AutoApplyJobRow | null> {
   const { data, error } = await supabase
@@ -53,6 +81,13 @@ async function processJob(job: AutoApplyJobRow): Promise<void> {
     void supabase.from('auto_apply_jobs').update({ logs: currentLogs }).eq('id', jobId);
   };
 
+  if (!job.job_url) {
+    currentLogs = appendLog(currentLogs, { level: 'warn', message: 'Automatic search-and-apply (no job_url) not implemented in this worker; use a job URL for single-apply.' });
+    await updateJob(jobId, { status: 'failed', progress: 0, logs: currentLogs, last_error: 'Automatic search not implemented' });
+    logger.info('Job skipped (no job_url)', { jobId });
+    return;
+  }
+
   const result = await runLinkedInEasyApply(job.job_url, job.dry_run, (e) => {
     currentLogs = appendLog(currentLogs, { level: e.level, message: e.message });
   });
@@ -65,25 +100,44 @@ async function processJob(job: AutoApplyJobRow): Promise<void> {
 
   if (result.success && !job.dry_run) {
     let matchScore: number | null = null;
-    try {
-      const resumeSummary = 'Resume on file';
-      const jobTitle = job.job_title ?? 'Job';
-      const jobDesc = job.job_url;
-      matchScore = await getMatchScore(resumeSummary, jobTitle, jobDesc);
-    } catch {
-      matchScore = null;
+    const aiEnabled = await isAiMatchingEnabled();
+    if (config.geminiApiKey && aiEnabled) {
+      try {
+        const resumeSummary = 'Resume on file';
+        const jobTitle = job.job_title ?? 'Job';
+        const jobDesc = job.job_url;
+        matchScore = await getMatchScore(resumeSummary, jobTitle, jobDesc);
+      } catch {
+        matchScore = null;
+      }
     }
-    await supabase.from('applied_jobs').insert({
-      user_id: job.user_id,
-      auto_apply_job_id: jobId,
-      job_url: job.job_url,
-      job_title: job.job_title,
-      company_name: job.company_name,
-      match_score: matchScore,
-    });
+    const { data: prefs } = await supabase
+      .from('job_preferences')
+      .select('match_threshold')
+      .eq('user_id', job.user_id)
+      .single();
+    const threshold = (prefs as { match_threshold?: number } | null)?.match_threshold ?? 0;
+    const shouldRecord = matchScore === null || matchScore >= threshold;
+    if (shouldRecord) {
+      await supabase.from('applied_jobs').insert({
+        user_id: job.user_id,
+        auto_apply_job_id: jobId,
+        job_url: job.job_url,
+        job_title: job.job_title,
+        company_name: job.company_name,
+        match_score: matchScore,
+      });
+    } else {
+      logger.info('Skipped recording applied_job (score below threshold)', {
+        jobId,
+        matchScore,
+        threshold,
+      });
+    }
   }
 
-  const newStatus = result.success ? 'completed' : job.retry_count + 1 >= MAX_RETRIES ? 'failed' : 'pending';
+  const { maxRetries } = await getSystemSettings();
+  const newStatus = result.success ? 'completed' : job.retry_count + 1 >= maxRetries ? 'failed' : 'pending';
   const newRetry = result.success ? job.retry_count : job.retry_count + 1;
 
   await updateJob(jobId, {
@@ -97,6 +151,11 @@ async function processJob(job: AutoApplyJobRow): Promise<void> {
 }
 
 async function poll(): Promise<void> {
+  const { maintenanceMode } = await getSystemSettings();
+  if (maintenanceMode) {
+    logger.info('Maintenance mode enabled, skipping poll');
+    return;
+  }
   const job = await fetchPendingJob();
   if (job) {
     await processJob(job);

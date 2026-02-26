@@ -1,27 +1,32 @@
 /**
- * In-memory rate limit per user (per process).
- * For production, use Redis or Upstash.
+ * In-memory per-user rate limit for API routes.
+ * For production at scale, use Redis or similar.
  */
+const windowMs = 60 * 1000; // 1 minute
+const maxRequestsPerWindow = 30;
 const store = new Map<string, { count: number; resetAt: number }>();
 
-const WINDOW_MS = 60_000; // 1 minute
-const MAX_REQUESTS = 30; // 30 requests per minute per user
+function getKey(userId: string): string {
+  return `user:${userId}`;
+}
 
-export function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
+export function checkRateLimit(userId: string): { allowed: boolean } {
   const now = Date.now();
-  const entry = store.get(userId);
+  const key = getKey(userId);
+  let entry = store.get(key);
   if (!entry) {
-    store.set(userId, { count: 1, resetAt: now + WINDOW_MS });
-    return { allowed: true, remaining: MAX_REQUESTS - 1 };
+    entry = { count: 1, resetAt: now + windowMs };
+    store.set(key, entry);
+    return { allowed: true };
   }
   if (now > entry.resetAt) {
-    store.set(userId, { count: 1, resetAt: now + WINDOW_MS });
-    return { allowed: true, remaining: MAX_REQUESTS - 1 };
+    entry = { count: 1, resetAt: now + windowMs };
+    store.set(key, entry);
+    return { allowed: true };
   }
   entry.count += 1;
-  const remaining = Math.max(0, MAX_REQUESTS - entry.count);
-  return {
-    allowed: entry.count <= MAX_REQUESTS,
-    remaining,
-  };
+  if (entry.count > maxRequestsPerWindow) {
+    return { allowed: false };
+  }
+  return { allowed: true };
 }

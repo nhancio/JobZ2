@@ -1,6 +1,6 @@
 /**
  * Example API test (run with npm test from apps/web).
- * Requires Next.js and jest setup.
+ * @jest-environment node
  */
 import { GET } from './route';
 

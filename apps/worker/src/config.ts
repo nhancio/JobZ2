@@ -9,7 +9,7 @@ function envOptional(name: string): string | undefined {
 }
 
 const openaiKey = envOptional('OPENAI_API_KEY') ?? '';
-const geminiKey = env('GEMINI_API_KEY');
+const geminiKey = envOptional('GEMINI_API_KEY') ?? '';
 
 /** Key used for the browser-use LLM: OpenAI key if set, else Gemini (via OpenAI-compatible API). */
 export const effectiveLlmKey = openaiKey.trim() || geminiKey;

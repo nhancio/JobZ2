@@ -1,6 +1,9 @@
 export type PlanType = 'free_plan' | 'pro_plan';
 
-export type AutoApplyJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export const PLAN_LIMITS: Record<PlanType, number> = {
+  free_plan: 5,
+  pro_plan: 50,
+};
 
 export interface Profile {
   id: string;
@@ -19,6 +22,9 @@ export interface Resume {
   content: Record<string, unknown>;
   file_path: string | null;
   is_default: boolean;
+  is_active?: boolean;
+  resume_url?: string | null;
+  resume_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -37,11 +43,7 @@ export interface JobPreferences {
   updated_at: string;
 }
 
-export interface LogEntry {
-  ts: string;
-  level: 'info' | 'warn' | 'error';
-  message: string;
-}
+export type AutoApplyJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface AutoApplyJob {
   id: string;
@@ -72,7 +74,13 @@ export interface AppliedJob {
   created_at: string;
 }
 
-export interface UsageCounters {
+export interface LogEntry {
+  ts: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+}
+
+export interface UsageCounter {
   user_id: string;
   applications_today: number;
   plan_type: PlanType;
@@ -80,20 +88,3 @@ export interface UsageCounters {
   created_at: string;
   updated_at: string;
 }
-
-export interface SystemSetting {
-  key: string;
-  value: Record<string, unknown>;
-  updated_at: string;
-}
-
-export interface FeatureFlag {
-  key: string;
-  enabled: boolean;
-  updated_at: string;
-}
-
-export const PLAN_LIMITS: Record<PlanType, number> = {
-  free_plan: 5,
-  pro_plan: 50,
-};

@@ -23,7 +23,7 @@ export const autoApplyJobSchema = z.object({
   job_title: z.string().max(500).optional().nullable(),
   company_name: z.string().max(300).optional().nullable(),
   resume_id: z.string().uuid().optional().nullable(),
-  dry_run: z.boolean().optional().default(false),
+  dry_run: z.boolean().optional().default(true),
 });
 
 export type CreateResumeInput = z.infer<typeof createResumeSchema>;

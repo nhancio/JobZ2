@@ -126,8 +126,8 @@ CREATE TABLE public.system_settings (
 -- Seed default system settings
 INSERT INTO public.system_settings (key, value) VALUES
   ('default_delays', '{"between_steps_ms": 2000, "page_load_ms": 3000}'::JSONB),
-  ('max_retries', '3'),
-  ('maintenance_mode', 'false');
+  ('max_retries', '3'::JSONB),
+  ('maintenance_mode', 'false'::JSONB);
 
 -- =============================================================================
 -- FEATURE_FLAGS

@@ -1,37 +1,54 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUserId } from '@/lib/auth';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { PLAN_LIMITS } from '@/lib/types/database';
+import { StartAutoApplyButton } from '@/components/dashboard/StartAutoApplyButton';
 import {
   FileText,
   Target,
   CheckCircle2,
   AlertCircle,
   Clock,
-  Plus,
   ExternalLink,
 } from 'lucide-react';
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = await getSessionUserId();
+  if (!userId) return null;
+  const supabase = createAdminClient();
 
-  const [{ data: usage }, { data: jobs }, { data: applied }, { data: resumes }] = await Promise.all([
-    supabase.from('usage_counters').select('*').eq('user_id', user.id).single(),
+  const [
+    { data: usage },
+    { data: jobs },
+    { data: appliedList },
+    appliedCountRes,
+    { data: resumes },
+    queueCountRes,
+  ] = await Promise.all([
+    supabase.from('usage_counters').select('*').eq('user_id', userId).single(),
     supabase
       .from('auto_apply_jobs')
       .select('id, status, progress, job_title, company_name, created_at, dry_run')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(10),
     supabase
       .from('applied_jobs')
       .select('id, job_title, company_name, match_score, applied_at, job_url')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('applied_at', { ascending: false })
       .limit(5),
-    supabase.from('resumes').select('id, name, is_default').eq('user_id', user.id),
+    supabase.from('applied_jobs').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+    supabase.from('resumes').select('id, name, is_default, is_active').eq('user_id', userId),
+    supabase
+      .from('auto_apply_jobs')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .in('status', ['pending', 'running']),
   ]);
+  const applied = appliedList ?? [];
+  const appliedCount = appliedCountRes?.count ?? 0;
+  const queueCount = queueCountRes?.count ?? 0;
 
   const limit = usage ? PLAN_LIMITS[usage.plan_type as keyof typeof PLAN_LIMITS] ?? 5 : 5;
   const used = usage?.applications_today ?? 0;
@@ -40,13 +57,7 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <Link
-          href="/dashboard/apply"
-          className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
-        >
-          <Plus className="h-4 w-4" />
-          New auto-apply job
-        </Link>
+        <StartAutoApplyButton />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -75,9 +86,7 @@ export default async function DashboardPage() {
             <Clock className="h-10 w-10 text-amber-500" />
             <div>
               <p className="text-sm font-medium text-slate-500">Jobs in queue</p>
-              <p className="text-2xl font-bold text-slate-900">
-                {jobs?.filter((j: { status: string }) => j.status === 'pending' || j.status === 'running').length ?? 0}
-              </p>
+              <p className="text-2xl font-bold text-slate-900">{queueCount ?? 0}</p>
             </div>
           </div>
         </div>
@@ -86,7 +95,7 @@ export default async function DashboardPage() {
             <CheckCircle2 className="h-10 w-10 text-green-500" />
             <div>
               <p className="text-sm font-medium text-slate-500">Applied</p>
-              <p className="text-2xl font-bold text-slate-900">{applied?.length ?? 0}</p>
+              <p className="text-2xl font-bold text-slate-900">{appliedCount ?? 0}</p>
             </div>
           </div>
         </div>

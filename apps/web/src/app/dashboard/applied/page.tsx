@@ -1,16 +1,17 @@
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUserId } from '@/lib/auth';
+import { createAdminClient } from '@/lib/supabase/admin';
 import type { AppliedJob } from '@/lib/types/database';
 import { ExternalLink } from 'lucide-react';
 
 export default async function AppliedPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = await getSessionUserId();
+  if (!userId) return null;
+  const supabase = createAdminClient();
 
   const { data: applied } = await supabase
     .from('applied_jobs')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .order('applied_at', { ascending: false });
 
   return (

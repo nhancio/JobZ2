@@ -2,11 +2,10 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { User } from '@supabase/supabase-js';
-import { Briefcase, LayoutDashboard, FileText, ListTodo, Settings, LogOut } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { Briefcase, LayoutDashboard, FileText, ListTodo, CheckCircle2, Settings, LogOut } from 'lucide-react';
 
-export default function DashboardNav({ user }: { user: User }) {
+export default function DashboardNav({ user }: { user: { id: string; email?: string } }) {
   const router = useRouter();
 
   const handleSignOut = async () => {
@@ -20,6 +19,7 @@ export default function DashboardNav({ user }: { user: User }) {
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/dashboard/resumes', label: 'Resumes', icon: FileText },
     { href: '/dashboard/jobs', label: 'Jobs', icon: ListTodo },
+    { href: '/dashboard/applied', label: 'Applied', icon: CheckCircle2 },
     { href: '/dashboard/preferences', label: 'Preferences', icon: Settings },
   ];
 
@@ -41,7 +41,7 @@ export default function DashboardNav({ user }: { user: User }) {
               {label}
             </Link>
           ))}
-          <span className="text-sm text-slate-500">{user.email}</span>
+          <span className="text-sm text-slate-500">{user.email ?? ''}</span>
           <button
             type="button"
             onClick={handleSignOut}

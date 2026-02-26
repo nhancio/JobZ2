@@ -1,17 +1,18 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUserId } from '@/lib/auth';
+import { createAdminClient } from '@/lib/supabase/admin';
 import type { Resume } from '@/lib/types/database';
 import { FileText, Plus } from 'lucide-react';
 
 export default async function ResumesPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = await getSessionUserId();
+  if (!userId) return null;
+  const supabase = createAdminClient();
 
   const { data: resumes } = await supabase
     .from('resumes')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
   return (
@@ -36,8 +37,10 @@ export default async function ResumesPage() {
             <FileText className="h-10 w-10 shrink-0 text-primary-500" />
             <div className="min-w-0 flex-1">
               <p className="font-medium text-slate-900">{r.name}</p>
-              {r.is_default && (
-                <span className="mt-1 inline-block text-xs text-primary-600">Default</span>
+              {(r.is_active || r.is_default) && (
+                <span className="mt-1 inline-block text-xs text-primary-600">
+                  {r.is_active ? 'Active' : 'Default'}
+                </span>
               )}
             </div>
           </Link>

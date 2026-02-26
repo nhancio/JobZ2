@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { jobPreferencesSchema, type JobPreferencesInput } from '@/lib/schemas';
-import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 
 export default function PreferencesPage() {
@@ -33,16 +32,9 @@ export default function PreferencesPage() {
   const locationsStr = watch('locations');
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from('job_preferences')
-      .select('*')
-      .single()
-      .then(({ data, error }: { data: { keywords?: string[]; locations?: string[]; remote_only?: boolean; min_salary?: number | null; industries?: string[]; experience_level?: string[]; match_threshold?: number } | null; error: { message: string; code?: string } | null }) => {
-        if (error && error.code !== 'PGRST116') {
-          toast.error(error.message);
-          return;
-        }
+    fetch('/api/preferences')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { keywords?: string[]; locations?: string[]; remote_only?: boolean; min_salary?: number | null; industries?: string[]; experience_level?: string[]; match_threshold?: number } | null) => {
         if (data) {
           setValue('keywords', data.keywords ?? []);
           setValue('locations', data.locations ?? []);
@@ -53,27 +45,29 @@ export default function PreferencesPage() {
           setValue('match_threshold', data.match_threshold ?? 70);
         }
         setLoading(false);
-      });
+      })
+      .catch(() => setLoading(false));
   }, [setValue]);
 
   const onSubmit = async (data: JobPreferencesInput) => {
     setSaving(true);
     try {
-      const supabase = createClient();
-      const payload = {
-        keywords: data.keywords,
-        locations: data.locations,
-        remote_only: data.remote_only,
-        min_salary: data.min_salary,
-        industries: data.industries,
-        experience_level: data.experience_level,
-        match_threshold: data.match_threshold,
-      };
-      const { error } = await supabase.from('job_preferences').upsert(payload, {
-        onConflict: 'user_id',
+      const res = await fetch('/api/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keywords: data.keywords,
+          locations: data.locations,
+          remote_only: data.remote_only,
+          min_salary: data.min_salary,
+          industries: data.industries,
+          experience_level: data.experience_level,
+          match_threshold: data.match_threshold,
+        }),
       });
-      if (error) {
-        toast.error(error.message);
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toast.error(json.error ?? 'Failed to save');
         return;
       }
       toast.success('Preferences saved');

@@ -1,19 +1,20 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUserId } from '@/lib/auth';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { LogViewer } from './LogViewer';
 
 export default async function JobDetailPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = await getSessionUserId();
+  if (!userId) return null;
+  const supabase = createAdminClient();
 
   const { data: job } = await supabase
     .from('auto_apply_jobs')
     .select('*')
     .eq('id', id)
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .single();
 
   if (!job) notFound();

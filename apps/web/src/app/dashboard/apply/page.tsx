@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { autoApplyJobSchema, type AutoApplyJobInput } from '@/lib/schemas';
-import { createClient } from '@/lib/supabase/client';
 import type { Resume } from '@/lib/types/database';
 import { toast } from 'sonner';
 
@@ -20,8 +19,10 @@ export default function ApplyPage() {
   });
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.from('resumes').select('*').order('is_default', { ascending: false }).then(({ data }: { data: Resume[] | null }) => setResumes(data ?? []));
+    fetch('/api/resumes')
+      .then((res) => res.ok ? res.json() : [])
+      .then((data: Resume[]) => setResumes(Array.isArray(data) ? data : []))
+      .catch(() => setResumes([]));
   }, []);
 
   const onSubmit = async (data: AutoApplyJobInput) => {

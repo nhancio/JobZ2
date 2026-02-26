@@ -4,9 +4,14 @@ Enterprise-grade SaaS: structured resumes, AI job matching (Gemini), and automat
 
 ## Tech stack
 
-- **Web**: Next.js 14 (App Router), TypeScript, Tailwind, React Hook Form + Zod, Supabase (Auth, Postgres, Storage, Realtime), Sonner, Lucide
-- **Worker**: Node + TypeScript, **browser-use** (browser-use-node, LLM-powered automation), Gemini (match scoring), Supabase
+- **Web**: Next.js 14 (App Router), TypeScript (strict), Tailwind CSS, React Hook Form + Zod, **Supabase Auth (Google)** for sign-in, Supabase (Postgres, Storage, Realtime), Sonner, Lucide
+- **Worker**: Node + TypeScript, **browser-use** (browser-use-node, LLM-powered automation), Gemini (AI match scoring), Supabase
 - **Package manager**: npm
+
+## ENV (required)
+
+- **Web** (`apps/web/.env.local`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (for resume parsing)
+- **Worker** (`apps/worker/.env` or env): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (optional; for AI matching when `ai_matching_enabled` is on). For automation: `OPENAI_API_KEY` or Gemini via `OPENAI_API_KEY` + `OPENAI_BASE_URL`
 
 ## Local setup
 
@@ -22,11 +27,13 @@ npm install
 
 1. Create a project at [supabase.com](https://supabase.com).
 2. In SQL Editor, run the contents of `supabase/migrations/001_initial_schema.sql` (creates tables, RLS, storage bucket, triggers).
-3. In Authentication > Providers, enable Email and Google if desired. For Google, add your OAuth Client ID and Secret (from Google Cloud Console).
-4. In Project Settings > API, copy:
+3. In **Database > Replication**, enable replication for the `auto_apply_jobs` table for optional Supabase Realtime; the dashboard also streams job progress via SSE (`/api/jobs/[id]/stream`).
+4. Tables include: `profiles`, `resumes`, `job_preferences`, `auto_apply_jobs`, `applied_jobs`, `usage_counters`, `system_settings`, `feature_flags`, `linkedin_sessions`. System settings (`max_retries`, `maintenance_mode`, `default_delays`) and feature flags (`automation_enabled`, `ai_matching_enabled`, `dry_run_enabled`) are seeded in the migration.
+5. In Authentication > Providers, enable Email and Google if desired (NextAuth uses Google OAuth from Google Cloud Console; see step 4 in “Run web app”).
+6. In Project Settings > API, copy:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_URL`
    - anon public → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - service_role (keep secret) → `SUPABASE_SERVICE_ROLE_KEY` (for worker and seed)
+   - service_role (keep secret) → `SUPABASE_SERVICE_ROLE_KEY` (for worker and seed script)
 
 ### 3. Environment
 
@@ -49,7 +56,7 @@ Edit `.env.local` (for local web dev you only need the `NEXT_PUBLIC_*` and `GEMI
 npm run dev
 ```
 
-Open [http://localhost:5000](http://localhost:5000). Use **Sign in** to log in with Google or email (magic link). After auth, use Dashboard to add resumes, set preferences, and create auto-apply jobs.
+Open [http://localhost:5000](http://localhost:5000). Use **Continue with Google** to sign in (Supabase Auth). After login, if you have no resume you’re redirected to **Resumes**; otherwise to **Dashboard**. Upload a resume (PDF/DOC), parse with Gemini, set one as active. Click **New auto-apply job** to start a run (worker will pick it up). See `docs/AUTO_APPLY_FLOW.md` for the full flow.
 
 ### 5. Run worker
 
@@ -77,10 +84,20 @@ The worker polls for `pending` jobs, runs **browser-use** (browser-use-node) on 
 - Create a job with **Dry run** unchecked. The worker will attempt to fill and submit using the browser-use agent. Ensure your resume and preferences are set.
 - Respect LinkedIn’s ToS and rate limits.
 
-## Deployment
+## Deployment architecture (Vercel + worker host)
 
-- **Web**: Deploy to **Vercel**. Set env vars in Project Settings (e.g. `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `GEMINI_API_KEY`). Build command: `npm run build` (from root with workspaces or from `apps/web`). Output: `apps/web` if using root build.
-- **Worker**: Run on a **VM or container host** (e.g. Railway, Render, Fly.io, or a VPS). Use the provided `apps/worker/Dockerfile`: build the worker (`npm run build` in `apps/worker`), then `docker build -t jobz2-worker apps/worker` and run with env vars. The worker needs `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, and Chromium (installed in Dockerfile via Playwright, which is a dependency of browser-use-node).
+- **Web (Vercel)**  
+  - Deploy the Next.js app from the repo root or `apps/web`.  
+  - Build command: `npm run build` (or `npm run build --workspace=apps/web` from root).  
+  - Root directory: `apps/web` if configuring in Vercel.  
+  - Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`; optionally `GEMINI_API_KEY` for future server-side use.
+
+- **Worker (VM or container)**  
+  - Run the browser-use automation worker on a VM or container host (Railway, Render, Fly.io, ECS, or a VPS).  
+  - Use `apps/worker/Dockerfile`: from repo root run  
+    `docker build -t jobz2-worker -f apps/worker/Dockerfile apps/worker`  
+    then run the container with env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (optional; for AI match scoring), and either `OPENAI_API_KEY` or Gemini via `OPENAI_API_KEY` + `OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`.  
+  - Chromium is installed in the Dockerfile (Playwright). Ensure the host has enough memory for headless Chrome.
 
 ## Scripts
 
@@ -89,16 +106,24 @@ The worker polls for `pending` jobs, runs **browser-use** (browser-use-node) on 
 | `npm run dev`  | Start Next.js on port 5000 |
 | `npm run dev:worker` | Start worker (poll + automate) |
 | `npm run build`| Build web app              |
-| `npm run start`| Start production web      |
+| `npm run start`| Start production web       |
 | `npm run lint` | Lint workspaces            |
-| `npm run lint:fix` | Lint and fix (web)     |
-| `npm run typecheck` | TypeScript check     |
-| `npm run format`| Prettier format           |
+| `npm run lint:fix` | Lint and fix (all workspaces) |
+| `npm run typecheck` | TypeScript check (all workspaces) |
+| `npm run format`| Prettier format            |
+| `npm run test` | Run tests (web: Jest)      |
 | `npm run db:seed` | Seed demo user data (from apps/web) |
 
 ## Health check
 
-- **Web**: `GET /api/health` returns `{ "status": "ok", "service": "jobz2-web" }`.
+- **Web**: `GET /api/health` returns `{ "status": "ok", "service": "jobz2-web", "timestamp": "..." }`.
+
+## Final verification
+
+- **typecheck**: From root, `npm run typecheck` (runs in both apps).
+- **build**: From root, `npm run build` (builds Next.js app).
+- **dev**: `npm run dev` starts the web app; in another terminal `npm run dev:worker` starts the worker.
+- **Server/client separation**: API routes and server components use `@/lib/supabase/server`; client components use `@/lib/supabase/client`. Secrets stay server-side; only `NEXT_PUBLIC_*` are exposed to the client.
 
 ## Security
 

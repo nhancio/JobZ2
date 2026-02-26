@@ -1,17 +1,18 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUserId } from '@/lib/auth';
+import { createAdminClient } from '@/lib/supabase/admin';
 import type { AutoApplyJob } from '@/lib/types/database';
 import { Clock, ExternalLink } from 'lucide-react';
 
 export default async function JobsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = await getSessionUserId();
+  if (!userId) return null;
+  const supabase = createAdminClient();
 
   const { data: jobs } = await supabase
     .from('auto_apply_jobs')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
   const statusColors: Record<string, string> = {

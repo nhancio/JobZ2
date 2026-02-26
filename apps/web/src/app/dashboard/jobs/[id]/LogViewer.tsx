@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import type { LogEntry } from '@/lib/types/database';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 export function LogViewer({
   initialLogs,
@@ -15,28 +13,41 @@ export function LogViewer({
   const [logs, setLogs] = useState<LogEntry[]>(initialLogs);
 
   useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`job:${jobId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'auto_apply_jobs',
-          filter: `id=eq.${jobId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
-          const newData = payload.new as { logs?: LogEntry[] };
-          if (Array.isArray(newData.logs)) {
-            setLogs(newData.logs);
-          }
+    let closed = false;
+    try {
+      const es = new EventSource(`/api/jobs/${jobId}/stream`);
+      es.onmessage = (e) => {
+        if (closed) return;
+        try {
+          const data = JSON.parse(e.data as string) as { logs?: LogEntry[] };
+          if (data && Array.isArray(data.logs)) setLogs(data.logs);
+        } catch {
+          // ignore
         }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      };
+      es.onerror = () => {
+        es.close();
+      };
+      return () => {
+        closed = true;
+        es.close();
+      };
+    } catch {
+      // EventSource not available (e.g. some browsers), fall back to polling
+      const interval = setInterval(() => {
+        if (closed) return;
+        fetch(`/api/jobs/${jobId}`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then((job: { logs?: LogEntry[] } | null) => {
+            if (job && Array.isArray(job.logs)) setLogs(job.logs);
+          })
+          .catch(() => {});
+      }, 2000);
+      return () => {
+        closed = true;
+        clearInterval(interval);
+      };
+    }
   }, [jobId]);
 
   if (logs.length === 0) {
