@@ -2,6 +2,21 @@
 
 Enterprise-grade SaaS: structured resumes, AI job matching (Gemini), and automatic LinkedIn Easy Apply via a browser automation worker.
 
+---
+
+## Can't reach Supabase? (VPN / firewall / ERR_CONNECTION_TIMED_OUT)
+
+If your network blocks **supabase.co**, run Supabase **on your own machine** so nothing hits the internet:
+
+1. Install **Docker Desktop** and **Supabase CLI**.
+2. From repo root: **`supabase start`** then **`supabase db reset`**.
+3. Copy local API URL and keys from **`supabase status`** into `apps/web/.env.local` and `apps/worker/.env` (use `http://127.0.0.1:54321` as the URL).
+4. Run **`npm run dev`** (web) and **`npm run dev:worker`** (worker).
+
+Full steps: **[LOCAL-SETUP-NO-INTERNET.md](./LOCAL-SETUP-NO-INTERNET.md)**.
+
+---
+
 ## Tech stack
 
 - **Web**: Next.js 14 (App Router), TypeScript (strict), Tailwind CSS, React Hook Form + Zod, **Supabase Auth (Google)** for sign-in, Supabase (Postgres, Storage, Realtime), Sonner, Lucide
@@ -97,7 +112,7 @@ The worker polls for `pending` jobs, runs **browser-use** (browser-use-node) on 
   - Use `apps/worker/Dockerfile`: from repo root run  
     `docker build -t jobz2-worker -f apps/worker/Dockerfile apps/worker`  
     then run the container with env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (optional; for AI match scoring), and either `OPENAI_API_KEY` or Gemini via `OPENAI_API_KEY` + `OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`.  
-  - Chromium is installed in the Dockerfile (Playwright). Ensure the host has enough memory for headless Chrome.
+  - Chromium is installed in the Dockerfile (Puppeteer). Ensure the host has enough memory for headless Chrome.
 
 ## Scripts
 

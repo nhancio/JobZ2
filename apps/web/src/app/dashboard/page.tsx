@@ -1,8 +1,10 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getSessionUserId } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PLAN_LIMITS } from '@/lib/types/database';
 import { StartAutoApplyButton } from '@/components/dashboard/StartAutoApplyButton';
+import { ConnectLinkedInButton } from '@/components/dashboard/ConnectLinkedInButton';
 import {
   FileText,
   Target,
@@ -49,6 +51,8 @@ export default async function DashboardPage() {
   const applied = appliedList ?? [];
   const appliedCount = appliedCountRes?.count ?? 0;
   const queueCount = queueCountRes?.count ?? 0;
+  const resumeList = resumes ?? [];
+  if (resumeList.length === 0) redirect('/dashboard/resumes');
 
   const limit = usage ? PLAN_LIMITS[usage.plan_type as keyof typeof PLAN_LIMITS] ?? 5 : 5;
   const used = usage?.applications_today ?? 0;
@@ -57,7 +61,10 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <StartAutoApplyButton />
+        <div className="flex items-center gap-2">
+          <ConnectLinkedInButton />
+          <StartAutoApplyButton />
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -77,7 +84,7 @@ export default async function DashboardPage() {
             <FileText className="h-10 w-10 text-slate-500" />
             <div>
               <p className="text-sm font-medium text-slate-500">Resumes</p>
-              <p className="text-2xl font-bold text-slate-900">{resumes?.length ?? 0}</p>
+              <p className="text-2xl font-bold text-slate-900">{resumeList?.length ?? 0}</p>
             </div>
           </div>
         </div>

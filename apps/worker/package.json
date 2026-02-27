@@ -4,19 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "cross-env NODE_OPTIONS=--dns-result-order=ipv4first tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
-    "typecheck": "npx tsc --noEmit"
+    "typecheck": "npx tsc --noEmit",
+    "linkedin:connect": "tsx src/linkedin-connect.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@supabase/supabase-js": "^2.45.4",
-    "browser-use-node": "^0.1.11"
+    "dotenv": "^16.4.5",
+    "undici": "^7.0.0",
+    "browser-use-node": "^0.1.11",
+    "puppeteer": "^23.6.0"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "@types/node": "^22.9.1",
     "eslint": "^8.57.1",
     "tsx": "^4.19.2",

@@ -22,7 +22,8 @@ export default async function AppliedPage() {
           <thead className="bg-slate-50">
             <tr>
               <th className="px-5 py-3 text-left text-xs font-medium uppercase text-slate-500">Job</th>
-              <th className="px-5 py-3 text-left text-xs font-medium uppercase text-slate-500">Match score</th>
+              <th className="px-5 py-3 text-left text-xs font-medium uppercase text-slate-500">Location</th>
+              <th className="px-5 py-3 text-left text-xs font-medium uppercase text-slate-500">Match</th>
               <th className="px-5 py-3 text-left text-xs font-medium uppercase text-slate-500">Applied</th>
               <th className="px-5 py-3 text-right text-xs font-medium uppercase text-slate-500">Link</th>
             </tr>
@@ -34,6 +35,7 @@ export default async function AppliedPage() {
                   <p className="font-medium text-slate-900">{a.job_title || 'Untitled'}</p>
                   <p className="text-sm text-slate-500">{a.company_name || '—'}</p>
                 </td>
+                <td className="px-5 py-4 text-sm text-slate-600">{(a as { job_location?: string }).job_location || '—'}</td>
                 <td className="px-5 py-4">
                   {a.match_score != null ? (
                     <span className="rounded bg-primary-100 px-2 py-1 text-sm font-medium text-primary-700">{a.match_score}%</span>

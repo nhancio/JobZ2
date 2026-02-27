@@ -1,0 +1,22 @@
+# Deploy worker to Render so it runs in the cloud (no VPN/firewall issues).
+# 1. Push this repo to GitHub, then go to https://dashboard.render.com
+# 2. New → Background Worker → Connect repo, select JobZ2
+# 3. Set Root Directory: apps/worker
+# 4. Build Command: npm ci && npm run build
+# 5. Start Command: npm start
+# 6. Add env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (and optionally GEMINI_API_KEY)
+# Or use this blueprint: New → Blueprint → Connect repo, then add env vars in dashboard.
+
+services:
+  - type: worker
+    name: jobz2-worker
+    rootDir: apps/worker
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        generateValue: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        generateValue: false

@@ -84,15 +84,15 @@ export default function PreferencesPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">Job preferences</h1>
       <p className="text-slate-600">
-        Set keywords, locations, and match threshold for AI scoring. Only jobs with score ≥
-        threshold will be applied.
+        Override job titles (keywords) and locations for automatic job search. If empty, resume data is used.
+        Match threshold: only jobs with score ≥ threshold are recorded.
       </p>
       <form
         onSubmit={handleSubmit(onSubmit)}
         className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
       >
         <div>
-          <label className="block text-sm font-medium text-slate-700">Keywords (comma-separated)</label>
+          <label className="block text-sm font-medium text-slate-700">Job titles / keywords (comma-separated, for search)</label>
           <input
             type="text"
             placeholder="e.g. React, TypeScript, Node.js"

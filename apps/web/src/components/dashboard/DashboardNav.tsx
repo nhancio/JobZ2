@@ -2,16 +2,14 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { signOut } from 'next-auth/react';
 import { Briefcase, LayoutDashboard, FileText, ListTodo, CheckCircle2, Settings, LogOut } from 'lucide-react';
 
 export default function DashboardNav({ user }: { user: { id: string; email?: string } }) {
   const router = useRouter();
 
   const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push('/');
+    await signOut({ callbackUrl: '/' });
     router.refresh();
   };
 

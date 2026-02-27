@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { signIn } from 'next-auth/react';
 import { Briefcase } from 'lucide-react';
 
 export default function LoginPage() {
@@ -14,18 +14,8 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      const supabase = createClient();
-      const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      const { error: err } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: `${origin}/auth/callback` },
-      });
-      if (err) {
-        console.error(err);
-        setLoading(false);
-        return;
-      }
-    } catch {
+      await signIn('google', { callbackUrl: '/dashboard' });
+    } finally {
       setLoading(false);
     }
   };

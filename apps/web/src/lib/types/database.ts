@@ -69,6 +69,8 @@ export interface AppliedJob {
   job_url: string;
   job_title: string | null;
   company_name: string | null;
+  job_location?: string | null;
+  status?: string | null;
   match_score: number | null;
   applied_at: string;
   created_at: string;

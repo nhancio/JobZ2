@@ -1,0 +1,12 @@
+# Supabase local dev – run with: supabase start
+# Requires Docker and Supabase CLI: https://supabase.com/docs/guides/cli
+project_id = "jobz2-local"
+
+[api]
+port = 54321
+
+[auth]
+site_url = "http://localhost:5000"
+additional_redirect_urls = ["https://localhost:5000", "http://127.0.0.1:5000"]
+
+# Enable Google in Studio (http://127.0.0.1:54323) if needed; add client_id/secret there

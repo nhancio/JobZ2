@@ -1,7 +1,9 @@
+import './bootstrap.js';
 import { supabase, appendLog, type AutoApplyJobRow, type LogEntry } from './supabase.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { runLinkedInEasyApply } from './automation.js';
+import { runLinkedInSearchAndApply } from './automation-search.js';
 import { getMatchScore } from './gemini.js';
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -34,20 +36,95 @@ async function isAiMatchingEnabled(): Promise<boolean> {
   return (data as { enabled?: boolean } | null)?.enabled ?? false;
 }
 
-async function fetchPendingJob(): Promise<AutoApplyJobRow | null> {
-  const { data, error } = await supabase
-    .from('auto_apply_jobs')
-    .select('*')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(1)
+async function runSearchAndApplyFlow(
+  job: AutoApplyJobRow,
+  jobId: string,
+  currentLogs: LogEntry[],
+  onLog: (entry: LogEntry) => void
+): Promise<{ success: boolean; appliedCount: number; logs: LogEntry[]; error?: string }> {
+  const resumeId = job.resume_id;
+  const { data: resume } = resumeId
+    ? await supabase.from('resumes').select('resume_json').eq('id', resumeId).eq('user_id', job.user_id).single()
+    : await supabase.from('resumes').select('resume_json').eq('user_id', job.user_id).eq('is_active', true).single();
+
+  const resumeData = (resume?.resume_json as Record<string, unknown>) ?? {};
+
+  const { data: prefs } = await supabase
+    .from('job_preferences')
+    .select('keywords, locations')
+    .eq('user_id', job.user_id)
     .single();
 
-  if (error && error.code !== 'PGRST116') {
-    logger.error('Fetch pending job failed', { error: error.message });
+  const jobTitles = Array.isArray((prefs as { keywords?: string[] })?.keywords) ? (prefs as { keywords: string[] }).keywords : [];
+  const locations = Array.isArray((prefs as { locations?: string[] })?.locations) ? (prefs as { locations: string[] }).locations : [];
+  const resumeTitles = (resumeData.job_titles as string[]) ?? [];
+  const resumeLocations = (resumeData.preferred_locations as string[]) ?? [];
+  const finalTitles = jobTitles.length ? jobTitles : resumeTitles;
+  const finalLocations = locations.length ? locations : resumeLocations;
+
+  const { data: session } = await supabase
+    .from('linkedin_sessions')
+    .select('cookies_json')
+    .eq('user_id', job.user_id)
+    .single();
+
+  let cookiesRaw = (session as { cookies_json?: unknown })?.cookies_json;
+  if (typeof cookiesRaw === 'string') {
+    try {
+      cookiesRaw = JSON.parse(cookiesRaw) as unknown;
+    } catch {
+      cookiesRaw = [];
+    }
+  }
+  const cookies = Array.isArray(cookiesRaw)
+    ? (cookiesRaw as { name: string; value: string; domain?: string; path?: string }[])
+    : [];
+
+  const result = await runLinkedInSearchAndApply(
+    {
+      jobTitles: finalTitles,
+      locations: finalLocations,
+      resumeData,
+      cookies,
+    },
+    onLog
+  );
+
+  for (const applied of result.appliedJobs) {
+    await supabase.from('applied_jobs').insert({
+      user_id: job.user_id,
+      auto_apply_job_id: jobId,
+      job_url: applied.job_url,
+      job_title: applied.job_title,
+      company_name: applied.company_name,
+      job_location: applied.job_location,
+      status: 'applied',
+    });
+  }
+
+  return {
+    success: result.success,
+    appliedCount: result.appliedCount,
+    logs: result.logs,
+    error: result.error,
+  };
+}
+
+async function fetchPendingJob(): Promise<AutoApplyJobRow | null> {
+  try {
+    const { data, error } = await supabase
+      .from('auto_apply_jobs')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') return null;
+    return data as AutoApplyJobRow | null;
+  } catch {
     return null;
   }
-  return data as AutoApplyJobRow | null;
 }
 
 async function updateJob(
@@ -82,9 +159,14 @@ async function processJob(job: AutoApplyJobRow): Promise<void> {
   };
 
   if (!job.job_url) {
-    currentLogs = appendLog(currentLogs, { level: 'warn', message: 'Automatic search-and-apply (no job_url) not implemented in this worker; use a job URL for single-apply.' });
-    await updateJob(jobId, { status: 'failed', progress: 0, logs: currentLogs, last_error: 'Automatic search not implemented' });
-    logger.info('Job skipped (no job_url)', { jobId });
+    const searchResult = await runSearchAndApplyFlow(job, jobId, currentLogs, onLog);
+    await updateJob(jobId, {
+      status: searchResult.success ? 'completed' : 'failed',
+      progress: searchResult.success ? 100 : 50,
+      logs: searchResult.logs,
+      last_error: searchResult.error ?? null,
+    });
+    logger.info('Search-and-apply finished', { jobId, appliedCount: searchResult.appliedCount });
     return;
   }
 
@@ -162,13 +244,26 @@ async function poll(): Promise<void> {
   }
 }
 
+async function checkSupabaseConnection(): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('system_settings').select('key').limit(1);
+    if (error) throw new Error(error.message);
+    const url = config.supabaseUrl.replace(/^https?:\/\//, '').split('/')[0];
+    logger.info('Supabase connection OK', { host: url });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function main(): Promise<void> {
   logger.info('Worker started', { pollIntervalMs: config.pollIntervalMs });
+  await checkSupabaseConnection();
   for (;;) {
     try {
       await poll();
-    } catch (err) {
-      logger.error('Poll cycle error', { error: String(err) });
+    } catch {
+      // retry quietly
     }
     await new Promise((r) => setTimeout(r, config.pollIntervalMs));
   }

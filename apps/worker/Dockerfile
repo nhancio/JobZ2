@@ -18,8 +18,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
-RUN npx playwright install chromium
-RUN npx playwright install-deps chromium
+# Chromium is bundled by Puppeteer; apt deps above are for headless Chrome
 COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production
