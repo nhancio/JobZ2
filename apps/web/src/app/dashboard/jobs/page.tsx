@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getSessionUserId } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { AutoApplyJob } from '@/lib/types/database';
+import { StartAutoApplyButton } from '@/components/dashboard/StartAutoApplyButton';
 import { Clock, ExternalLink } from 'lucide-react';
 
 export default async function JobsPage() {
@@ -27,12 +28,7 @@ export default async function JobsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Auto-apply jobs</h1>
-        <Link
-          href="/dashboard/apply"
-          className="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
-        >
-          New job
-        </Link>
+        <StartAutoApplyButton />
       </div>
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-slate-200">
@@ -104,9 +100,9 @@ export default async function JobsPage() {
           <div className="flex flex-col items-center justify-center py-12">
             <Clock className="h-12 w-12 text-slate-400" />
             <p className="mt-2 text-slate-500">No jobs yet</p>
-            <Link href="/dashboard/apply" className="mt-2 text-primary-600 hover:underline">
-              Create your first auto-apply job
-            </Link>
+            <div className="mt-4">
+              <StartAutoApplyButton />
+            </div>
           </div>
         )}
       </div>

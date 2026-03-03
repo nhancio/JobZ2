@@ -33,38 +33,55 @@ export async function POST(request: NextRequest) {
   const ext = file.name.split('.').pop() || 'pdf';
   const path = `${userId}/${crypto.randomUUID()}.${ext}`;
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const { error: uploadError } = await supabase.storage
-    .from('resumes')
-    .upload(path, buffer, { contentType: type, upsert: false });
+  const supabase = createAdminClient();
+  const ext = file.name.split('.').pop() || 'pdf';
+  const path = `${userId}/${crypto.randomUUID()}.${ext}`;
 
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 });
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const { error: uploadError } = await supabase.storage
+      .from('resumes')
+      .upload(path, buffer, { contentType: type, upsert: false });
+
+    if (uploadError) {
+      return NextResponse.json(
+        { error: uploadError.message.includes('fetch') || uploadError.message.includes('timeout') ? 'Cannot reach storage. Use a network that can reach Supabase or run Supabase locally (see README).' : uploadError.message },
+        { status: 503 }
+      );
+    }
+
+    await supabase
+      .from('resumes')
+      .update({ is_active: false })
+      .eq('user_id', userId);
+
+    const { data: resume, error: insertError } = await supabase
+      .from('resumes')
+      .insert({
+        user_id: userId,
+        name: file.name,
+        resume_url: path,
+        file_path: path,
+        resume_json: {},
+        is_active: true,
+        content: {},
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      return NextResponse.json(
+        { error: insertError.message.includes('fetch') || insertError.message.includes('timeout') ? 'Cannot reach database. Use a network that can reach Supabase or run Supabase locally (see README).' : insertError.message },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json(resume);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isNetwork = /fetch failed|timeout|ECONNREFUSED|ETIMEDOUT/i.test(msg);
+    return NextResponse.json(
+      { error: isNetwork ? 'Cannot reach Supabase. Use a different network or run Supabase locally (see README).' : msg },
+      { status: isNetwork ? 503 : 500 }
+    );
   }
-
-  const resumeUrl = path;
-
-  await supabase
-    .from('resumes')
-    .update({ is_active: false })
-    .eq('user_id', userId);
-
-  const { data: resume, error: insertError } = await supabase
-    .from('resumes')
-    .insert({
-      user_id: userId,
-      name: file.name,
-      resume_url: path,
-      file_path: path,
-      resume_json: {},
-      is_active: true,
-      content: {},
-    })
-    .select()
-    .single();
-
-  if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
-  }
-  return NextResponse.json(resume);
 }

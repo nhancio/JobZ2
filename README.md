@@ -4,6 +4,21 @@ Enterprise-grade SaaS: structured resumes, AI job matching (Gemini), and automat
 
 ---
 
+## Why am I seeing 500 errors? (resume upload, preferences, resumes list)
+
+Your **network is blocking Supabase** (e.g. VPN/firewall blocks `*.supabase.co`). So every feature that uses the database — login sync, resume upload, preferences, job list — fails with **500 Internal Server Error**. The app is built to talk to Supabase; when it can’t reach it, those requests fail.
+
+**To get your flow working** (upload resume → connect LinkedIn → auto-apply to matching jobs):
+
+- **Option A:** Use a network that allows Supabase (e.g. different Wi‑Fi, turn off VPN).
+- **Option B:** Run Supabase **on your PC** so the app never needs to reach the internet for the DB:
+  1. Install **Docker Desktop** and **Supabase CLI** (see **Can't reach Supabase?** below).
+  2. From repo root run: **`.\scripts\run-local.ps1`** (starts Supabase, applies migrations, switches env to local and keeps your Google login).
+  3. **Terminal 1:** `npm run dev` → **Terminal 2:** `npm run dev:worker`.
+  4. Open **http://localhost:5000** → Log in with Google → Upload resume → Connect LinkedIn → **New auto-apply job**.
+
+---
+
 ## Can't reach Supabase? (VPN / firewall / ERR_CONNECTION_TIMED_OUT)
 
 If your network blocks **supabase.co**, run Supabase **on your own machine** so nothing hits the internet:
