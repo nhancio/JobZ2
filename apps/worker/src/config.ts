@@ -20,8 +20,7 @@ export const openaiCompatibleBaseUrl =
     : undefined;
 
 export const config = {
-  supabaseUrl: env('SUPABASE_URL'),
-  supabaseServiceKey: env('SUPABASE_SERVICE_ROLE_KEY'),
+  firebaseServiceAccountKey: env('FIREBASE_SERVICE_ACCOUNT_KEY'),
   geminiApiKey: geminiKey,
   openaiApiKey: openaiKey,
   effectiveLlmKey,

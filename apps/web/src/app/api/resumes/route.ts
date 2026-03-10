@@ -1,72 +1,63 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSessionUserId } from '@/lib/auth';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { createResumeSchema } from '@/lib/schemas';
+export const runtime = 'nodejs'
 
-export async function GET() {
-  const userId = await getSessionUserId();
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from('resumes')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-    if (error) {
-      const msg = error.message || '';
-      const isNetwork = /fetch failed|timeout|ECONNREFUSED|ETIMEDOUT/i.test(msg);
-      return NextResponse.json(
-        { error: isNetwork ? 'Cannot reach database. Use local Supabase (see README).' : msg },
-        { status: isNetwork ? 503 : 500 }
-      );
-    }
-    return NextResponse.json(data ?? []);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const isNetwork = /fetch failed|timeout|ECONNREFUSED|ETIMEDOUT/i.test(msg);
-    return NextResponse.json(
-      { error: isNetwork ? 'Cannot reach database. Use local Supabase (see README).' : msg },
-      { status: isNetwork ? 503 : 500 }
-    );
-  }
-}
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth-config'
+import { getAdminDb } from '@/lib/firebase/admin'
+import { parseResumeWithGemini, parseResumeTextWithGemini } from '@/lib/gemini'
 
 export async function POST(request: NextRequest) {
-  const userId = await getSessionUserId();
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const body = await request.json();
-  const parsed = createResumeSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 400 });
+  const session = await getServerSession(authOptions)
+  if (!session?.userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const userId = session.userId!
+
+  const formData = await request.formData()
+  const file     = formData.get('file') as File | null
+
+  if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+
+  if (file.size > 10 * 1024 * 1024) {
+    return NextResponse.json({ error: 'File too large (max 10 MB)' }, { status: 400 })
   }
+
+  const isPdf  = file.type === 'application/pdf'
+  const isDocx = file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+  if (!isPdf && !isDocx) {
+    return NextResponse.json({ error: 'Only PDF and DOCX files are supported' }, { status: 400 })
+  }
+
   try {
-    const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from('resumes')
-      .insert({
-        user_id: userId,
-        name: parsed.data.name,
-        content: parsed.data.content ?? {},
-        is_default: parsed.data.is_default ?? false,
-      })
-      .select()
-      .single();
-    if (error) {
-      const msg = error.message || '';
-      const isNetwork = /fetch failed|timeout|ECONNREFUSED|ETIMEDOUT/i.test(msg);
-      return NextResponse.json(
-        { error: isNetwork ? 'Cannot reach database. Use local Supabase (see README).' : msg },
-        { status: isNetwork ? 503 : 500 }
-      );
+    const buffer = Buffer.from(await file.arrayBuffer())
+
+    // ── 1. Parse with Gemini (from in-memory buffer) ─────────────────────
+    let resumeJson
+    if (isPdf) {
+      resumeJson = await parseResumeWithGemini(buffer, 'application/pdf')
+    } else {
+      const mammoth = await import('mammoth')
+      const { value: plainText } = await mammoth.extractRawText({ buffer })
+      resumeJson = await parseResumeTextWithGemini(plainText)
     }
-    return NextResponse.json(data);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const isNetwork = /fetch failed|timeout|ECONNREFUSED|ETIMEDOUT/i.test(msg);
-    return NextResponse.json(
-      { error: isNetwork ? 'Cannot reach database. Use local Supabase (see README).' : msg },
-      { status: isNetwork ? 503 : 500 }
-    );
+
+    // ── 2. Save / update in Firestore (no Storage — Spark plan) ──────────
+    const db = getAdminDb()
+    const now = new Date().toISOString()
+    const resumeRef = db.collection('resumes').doc(userId)
+    const existing  = await resumeRef.get()
+
+    await resumeRef.set({
+      user_id:     userId,
+      resume_url:  null,   // Storage not available on Spark plan
+      resume_json: resumeJson,
+      file_name:   file.name,
+      updated_at:  now,
+      ...(existing.exists ? {} : { created_at: now }),
+    }, { merge: true })
+
+    return NextResponse.json({ success: true, resumeJson })
+  } catch (err: any) {
+    console.error('Resume upload/parse error:', err)
+    return NextResponse.json({ error: err?.message ?? 'Failed to process resume' }, { status: 500 })
   }
 }

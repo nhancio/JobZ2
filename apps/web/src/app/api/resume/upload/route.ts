@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUserId } from '@/lib/auth';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { getAdminDb } from '@/lib/firebase/admin';
 
 export const runtime = 'nodejs';
 
@@ -29,59 +29,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid file type. Use PDF, DOC, DOCX or TXT.' }, { status: 400 });
   }
 
-  const supabase = createAdminClient();
-  const ext = file.name.split('.').pop() || 'pdf';
-  const path = `${userId}/${crypto.randomUUID()}.${ext}`;
-
-  const supabase = createAdminClient();
-  const ext = file.name.split('.').pop() || 'pdf';
-  const path = `${userId}/${crypto.randomUUID()}.${ext}`;
-
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const { error: uploadError } = await supabase.storage
-      .from('resumes')
-      .upload(path, buffer, { contentType: type, upsert: false });
+    const now = new Date().toISOString();
+    const db  = getAdminDb();
 
-    if (uploadError) {
-      return NextResponse.json(
-        { error: uploadError.message.includes('fetch') || uploadError.message.includes('timeout') ? 'Cannot reach storage. Use a network that can reach Supabase or run Supabase locally (see README).' : uploadError.message },
-        { status: 503 }
-      );
-    }
+    // Deactivate previous resumes for this user
+    const prevSnap = await db.collection('resumes').where('user_id', '==', userId).where('is_active', '==', true).get();
+    const batch = db.batch();
+    prevSnap.docs.forEach(d => batch.update(d.ref, { is_active: false }));
+    await batch.commit();
 
-    await supabase
-      .from('resumes')
-      .update({ is_active: false })
-      .eq('user_id', userId);
+    // Insert new resume record (no Storage on Spark plan — file stored as metadata only)
+    const resumeRef = db.collection('resumes').doc();
+    await resumeRef.set({
+      user_id:     userId,
+      name:        file.name,
+      resume_url:  null,
+      file_path:   null,
+      resume_json: {},
+      is_active:   true,
+      content:     {},
+      created_at:  now,
+      updated_at:  now,
+    });
 
-    const { data: resume, error: insertError } = await supabase
-      .from('resumes')
-      .insert({
-        user_id: userId,
-        name: file.name,
-        resume_url: path,
-        file_path: path,
-        resume_json: {},
-        is_active: true,
-        content: {},
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      return NextResponse.json(
-        { error: insertError.message.includes('fetch') || insertError.message.includes('timeout') ? 'Cannot reach database. Use a network that can reach Supabase or run Supabase locally (see README).' : insertError.message },
-        { status: 503 }
-      );
-    }
-    return NextResponse.json(resume);
+    return NextResponse.json({ id: resumeRef.id, user_id: userId, name: file.name, resume_url: null, is_active: true, created_at: now });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const isNetwork = /fetch failed|timeout|ECONNREFUSED|ETIMEDOUT/i.test(msg);
-    return NextResponse.json(
-      { error: isNetwork ? 'Cannot reach Supabase. Use a different network or run Supabase locally (see README).' : msg },
-      { status: isNetwork ? 503 : 500 }
-    );
+    console.error('Resume upload error:', msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

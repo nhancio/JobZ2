@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUserId } from '@/lib/auth';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { getAdminDb } from '@/lib/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,15 +14,10 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const supabase = createAdminClient();
-  const { data: job, error } = await supabase
-    .from('auto_apply_jobs')
-    .select('id')
-    .eq('id', id)
-    .eq('user_id', userId)
-    .single();
+  const db  = getAdminDb();
+  const doc = await db.collection('auto_apply_jobs').doc(id).get();
 
-  if (error || !job) {
+  if (!doc.exists || doc.data()?.user_id !== userId) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
@@ -39,13 +34,10 @@ export async function GET(
           controller.close();
           return;
         }
-        const { data: row } = await supabase
-          .from('auto_apply_jobs')
-          .select('progress, status, logs')
-          .eq('id', id)
-          .single();
-        if (row) {
-          send(row);
+        const snap = await db.collection('auto_apply_jobs').doc(id).get();
+        if (snap.exists) {
+          const row = snap.data()!;
+          send({ progress: row.progress, status: row.status, logs: row.logs });
           if (row.status === 'completed' || row.status === 'failed' || row.status === 'cancelled') {
             clearInterval(interval);
             controller.close();

@@ -1,5 +1,5 @@
 import { logger } from './logger.js';
-import type { LogEntry } from './supabase.js';
+import type { LogEntry } from './firebase.js';
 import { config } from './config.js';
 
 export interface AutomationResult {

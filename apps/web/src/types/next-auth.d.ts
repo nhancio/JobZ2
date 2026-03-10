@@ -2,6 +2,6 @@ import 'next-auth';
 
 declare module 'next-auth' {
   interface Session {
-    supabaseUserId?: string;
+    userId?: string;
   }
 }

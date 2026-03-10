@@ -1,6 +1,8 @@
 # JobZ2 – AI Job Auto Apply Agent
 
-Enterprise-grade SaaS: structured resumes, AI job matching (Gemini), and automatic LinkedIn Easy Apply via a browser automation worker.
+Enterprise-grade SaaS: structured resumes, AI job matching (Gemini), and automatic LinkedIn Easy Apply. **This repo is a single app** (web + LinkedIn automation in one Next.js app).
+
+**Quick run:** From repo root run `npm install`, then `npm run dev`. Open **http://localhost:5000**. Use **Supabase** for auth and DB; run migrations `003_jobz2_app_initial.sql` and `004_jobz2_app_improvements.sql` in your Supabase SQL editor (see [Supabase setup](#2-supabase-setup) below).
 
 ---
 
@@ -56,7 +58,9 @@ npm install
 ### 2. Supabase setup
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. In SQL Editor, run the contents of `supabase/migrations/001_initial_schema.sql` (creates tables, RLS, storage bucket, triggers).
+2. In SQL Editor, run the migrations in order:
+   - **Merged single app (recommended):** Run `supabase/migrations/003_jobz2_app_initial.sql` then `004_jobz2_app_improvements.sql` (creates `resumes`, `linkedin_sessions`, `auto_apply_jobs`, `applied_jobs`, `user_preferences`, storage bucket).
+   - **Original JobZ2 schema:** Alternatively run `001_initial_schema.sql` and `002_auto_apply_flow.sql` (different table shapes).
 3. In **Database > Replication**, enable replication for the `auto_apply_jobs` table for optional Supabase Realtime; the dashboard also streams job progress via SSE (`/api/jobs/[id]/stream`).
 4. Tables include: `profiles`, `resumes`, `job_preferences`, `auto_apply_jobs`, `applied_jobs`, `usage_counters`, `system_settings`, `feature_flags`, `linkedin_sessions`. System settings (`max_retries`, `maintenance_mode`, `default_delays`) and feature flags (`automation_enabled`, `ai_matching_enabled`, `dry_run_enabled`) are seeded in the migration.
 5. In Authentication > Providers, enable Email and Google if desired (NextAuth uses Google OAuth from Google Cloud Console; see step 4 in “Run web app”).

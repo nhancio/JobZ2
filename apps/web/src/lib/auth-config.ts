@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { getAdminDb } from '@/lib/firebase/admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -15,43 +16,46 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
     async session({ session, token }) {
-      if (session.user) {
-        (session as { supabaseUserId?: string }).supabaseUserId = token.sub as string;
+      if (token.sub) {
+        (session as { userId?: string }).userId = token.sub;
       }
       return session;
     },
-    async jwt({ token, account, profile }) {
-      if (account && profile && typeof profile.email === 'string') {
+    async jwt({ token, profile }) {
+      // Only runs on first sign-in (when profile is present)
+      if (profile && token.sub) {
         try {
-          const supabase = createAdminClient();
-          const email = profile.email as string;
+          const db = getAdminDb();
+          const userId = token.sub;
+          const email = (profile as { email?: string }).email ?? null;
           const fullName = (profile as { name?: string }).name ?? null;
           const avatarUrl = (profile as { picture?: string }).picture ?? null;
+          const now = new Date().toISOString();
 
-          const { data: created } = await supabase.auth.admin.createUser({
-            email,
-            email_confirm: true,
-            user_metadata: { full_name: fullName, avatar_url: avatarUrl },
-          });
-          let userId: string;
-          if (created?.user?.id) {
-            userId = created.user.id;
-          } else {
-            const { data: prof } = await supabase.from('profiles').select('id').eq('email', email).single();
-            if (!prof?.id) return token;
-            userId = prof.id;
-          }
-
-          await supabase.from('profiles').upsert(
-            { id: userId, email, full_name: fullName, avatar_url: avatarUrl, updated_at: new Date().toISOString() },
-            { onConflict: 'id' }
+          await db.collection('profiles').doc(userId).set(
+            { email, full_name: fullName, avatar_url: avatarUrl, updated_at: now },
+            { merge: true }
           );
-          const { data: uc } = await supabase.from('usage_counters').select('user_id').eq('user_id', userId).single();
-          if (!uc) {
-            await supabase.from('usage_counters').insert({ user_id: userId, plan_type: 'free_plan' });
+
+          // Set created_at only on first create
+          await db.collection('profiles').doc(userId).set(
+            { created_at: FieldValue.serverTimestamp() },
+            { merge: true }
+          );
+
+          const counterDoc = await db.collection('usage_counters').doc(userId).get();
+          if (!counterDoc.exists) {
+            await db.collection('usage_counters').doc(userId).set({
+              user_id: userId,
+              applications_today: 0,
+              plan_type: 'free_plan',
+              last_reset_date: now,
+              created_at: FieldValue.serverTimestamp(),
+              updated_at: FieldValue.serverTimestamp(),
+            });
           }
-          token.sub = userId;
-        } catch {
+        } catch (err) {
+          console.error('Firebase profile upsert error:', err);
           throw new Error('Cannot reach database. Check your connection or try again later.');
         }
       }

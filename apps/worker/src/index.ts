@@ -1,5 +1,5 @@
 import './bootstrap.js';
-import { supabase, appendLog, type AutoApplyJobRow, type LogEntry } from './supabase.js';
+import { db, appendLog, type AutoApplyJobRow, type LogEntry } from './firebase.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { runLinkedInEasyApply } from './automation.js';
@@ -9,31 +9,19 @@ import { getMatchScore } from './gemini.js';
 const DEFAULT_MAX_RETRIES = 3;
 
 async function getSystemSettings(): Promise<{ maxRetries: number; maintenanceMode: boolean }> {
-  const { data: maxRetriesRow } = await supabase
-    .from('system_settings')
-    .select('value')
-    .eq('key', 'max_retries')
-    .single();
-  const raw = (maxRetriesRow?.value as number | string | null) ?? DEFAULT_MAX_RETRIES;
+  const maxRetriesDoc = await db.collection('system_settings').doc('max_retries').get();
+  const raw = (maxRetriesDoc.exists ? maxRetriesDoc.data()?.value : null) ?? DEFAULT_MAX_RETRIES;
   const maxRetries = typeof raw === 'number' ? raw : parseInt(String(raw), 10) || DEFAULT_MAX_RETRIES;
 
-  const { data: maintenanceRow } = await supabase
-    .from('system_settings')
-    .select('value')
-    .eq('key', 'maintenance_mode')
-    .single();
-  const maintenanceMode = maintenanceRow?.value === true;
+  const maintenanceDoc = await db.collection('system_settings').doc('maintenance_mode').get();
+  const maintenanceMode = maintenanceDoc.exists && maintenanceDoc.data()?.value === true;
 
   return { maxRetries, maintenanceMode };
 }
 
 async function isAiMatchingEnabled(): Promise<boolean> {
-  const { data } = await supabase
-    .from('feature_flags')
-    .select('enabled')
-    .eq('key', 'ai_matching_enabled')
-    .single();
-  return (data as { enabled?: boolean } | null)?.enabled ?? false;
+  const doc = await db.collection('feature_flags').doc('ai_matching_enabled').get();
+  return doc.exists ? doc.data()?.enabled ?? false : false;
 }
 
 async function runSearchAndApplyFlow(
@@ -42,86 +30,78 @@ async function runSearchAndApplyFlow(
   currentLogs: LogEntry[],
   onLog: (entry: LogEntry) => void
 ): Promise<{ success: boolean; appliedCount: number; logs: LogEntry[]; error?: string }> {
-  const resumeId = job.resume_id;
-  const { data: resume } = resumeId
-    ? await supabase.from('resumes').select('resume_json').eq('id', resumeId).eq('user_id', job.user_id).single()
-    : await supabase.from('resumes').select('resume_json').eq('user_id', job.user_id).eq('is_active', true).single();
+  // Get resume
+  let resumeData: Record<string, unknown> = {};
+  if (job.resume_id) {
+    const resumeDoc = await db.collection('resumes').doc(job.resume_id).get();
+    if (resumeDoc.exists && resumeDoc.data()?.user_id === job.user_id) {
+      resumeData = (resumeDoc.data()?.resume_json as Record<string, unknown>) ?? {};
+    }
+  } else {
+    // Fall back to user's primary resume (doc ID == user_id)
+    const resumeDoc = await db.collection('resumes').doc(job.user_id).get();
+    if (resumeDoc.exists) {
+      resumeData = (resumeDoc.data()?.resume_json as Record<string, unknown>) ?? {};
+    }
+  }
 
-  const resumeData = (resume?.resume_json as Record<string, unknown>) ?? {};
+  const prefsDoc = await db.collection('job_preferences').doc(job.user_id).get();
+  const prefs    = prefsDoc.exists ? prefsDoc.data() : null;
 
-  const { data: prefs } = await supabase
-    .from('job_preferences')
-    .select('keywords, locations')
-    .eq('user_id', job.user_id)
-    .single();
-
-  const jobTitles = Array.isArray((prefs as { keywords?: string[] })?.keywords) ? (prefs as { keywords: string[] }).keywords : [];
-  const locations = Array.isArray((prefs as { locations?: string[] })?.locations) ? (prefs as { locations: string[] }).locations : [];
-  const resumeTitles = (resumeData.job_titles as string[]) ?? [];
+  const jobTitles  = Array.isArray(prefs?.keywords)  ? (prefs!.keywords  as string[]) : [];
+  const locations  = Array.isArray(prefs?.locations) ? (prefs!.locations as string[]) : [];
+  const resumeTitles    = (resumeData.job_titles as string[]) ?? [];
   const resumeLocations = (resumeData.preferred_locations as string[]) ?? [];
-  const finalTitles = jobTitles.length ? jobTitles : resumeTitles;
+  const finalTitles    = jobTitles.length  ? jobTitles  : resumeTitles;
   const finalLocations = locations.length ? locations : resumeLocations;
 
-  const { data: session } = await supabase
-    .from('linkedin_sessions')
-    .select('cookies_json')
-    .eq('user_id', job.user_id)
-    .single();
-
-  let cookiesRaw = (session as { cookies_json?: unknown })?.cookies_json;
+  const sessionDoc = await db.collection('linkedin_sessions').doc(job.user_id).get();
+  let cookiesRaw = sessionDoc.exists ? sessionDoc.data()?.cookies_json : undefined;
   if (typeof cookiesRaw === 'string') {
-    try {
-      cookiesRaw = JSON.parse(cookiesRaw) as unknown;
-    } catch {
-      cookiesRaw = [];
-    }
+    try { cookiesRaw = JSON.parse(cookiesRaw); } catch { cookiesRaw = []; }
   }
   const cookies = Array.isArray(cookiesRaw)
     ? (cookiesRaw as { name: string; value: string; domain?: string; path?: string }[])
     : [];
 
   const result = await runLinkedInSearchAndApply(
-    {
-      jobTitles: finalTitles,
-      locations: finalLocations,
-      resumeData,
-      cookies,
-    },
+    { jobTitles: finalTitles, locations: finalLocations, resumeData, cookies },
     onLog
   );
 
   for (const applied of result.appliedJobs) {
-    await supabase.from('applied_jobs').insert({
-      user_id: job.user_id,
+    await db.collection('applied_jobs').add({
+      user_id:          job.user_id,
       auto_apply_job_id: jobId,
-      job_url: applied.job_url,
-      job_title: applied.job_title,
-      company_name: applied.company_name,
-      job_location: applied.job_location,
-      status: 'applied',
+      job_url:          applied.job_url,
+      job_title:        applied.job_title,
+      company_name:     applied.company_name,
+      job_location:     applied.job_location,
+      status:           'applied',
+      applied_at:       new Date().toISOString(),
+      created_at:       new Date().toISOString(),
     });
   }
 
   return {
-    success: result.success,
+    success:      result.success,
     appliedCount: result.appliedCount,
-    logs: result.logs,
-    error: result.error,
+    logs:         result.logs,
+    error:        result.error,
   };
 }
 
 async function fetchPendingJob(): Promise<AutoApplyJobRow | null> {
   try {
-    const { data, error } = await supabase
-      .from('auto_apply_jobs')
-      .select('*')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
+    const snap = await db.collection('auto_apply_jobs')
+      .where('status', '==', 'pending')
+      .orderBy('created_at', 'asc')
       .limit(1)
-      .single();
+      .get();
 
-    if (error && error.code !== 'PGRST116') return null;
-    return data as AutoApplyJobRow | null;
+    if (snap.empty) return null;
+    const doc = snap.docs[0];
+    return { id: doc.id, ...doc.data() } as AutoApplyJobRow;
   } catch {
     return null;
   }
@@ -137,8 +117,14 @@ async function updateJob(
     retry_count?: number;
   }
 ) {
-  const { error } = await supabase.from('auto_apply_jobs').update(updates).eq('id', id);
-  if (error) logger.error('Update job failed', { id, error: error.message });
+  try {
+    await db.collection('auto_apply_jobs').doc(id).update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.error('Update job failed', { id, error: String(err) });
+  }
 }
 
 async function processJob(job: AutoApplyJobRow): Promise<void> {
@@ -146,24 +132,24 @@ async function processJob(job: AutoApplyJobRow): Promise<void> {
   logger.info('Processing job', { jobId, dryRun: job.dry_run });
 
   await updateJob(jobId, {
-    status: 'running',
+    status:   'running',
     progress: 10,
-    logs: appendLog(job.logs, { level: 'info', message: 'Worker picked up job' }),
+    logs:     appendLog(job.logs, { level: 'info', message: 'Worker picked up job' }),
   });
 
   let currentLogs = appendLog(job.logs, { level: 'info', message: 'Worker picked up job' });
 
   const onLog = (entry: LogEntry) => {
     currentLogs = appendLog(currentLogs, { level: entry.level, message: entry.message });
-    void supabase.from('auto_apply_jobs').update({ logs: currentLogs }).eq('id', jobId);
+    void db.collection('auto_apply_jobs').doc(jobId).update({ logs: currentLogs });
   };
 
   if (!job.job_url) {
     const searchResult = await runSearchAndApplyFlow(job, jobId, currentLogs, onLog);
     await updateJob(jobId, {
-      status: searchResult.success ? 'completed' : 'failed',
-      progress: searchResult.success ? 100 : 50,
-      logs: searchResult.logs,
+      status:     searchResult.success ? 'completed' : 'failed',
+      progress:   searchResult.success ? 100 : 50,
+      logs:       searchResult.logs,
       last_error: searchResult.error ?? null,
     });
     logger.info('Search-and-apply finished', { jobId, appliedCount: searchResult.appliedCount });
@@ -175,8 +161,8 @@ async function processJob(job: AutoApplyJobRow): Promise<void> {
   });
 
   await updateJob(jobId, {
-    progress: result.progress,
-    logs: result.logs,
+    progress:   result.progress,
+    logs:       result.logs,
     last_error: result.error ?? null,
   });
 
@@ -185,51 +171,55 @@ async function processJob(job: AutoApplyJobRow): Promise<void> {
     const aiEnabled = await isAiMatchingEnabled();
     if (config.geminiApiKey && aiEnabled) {
       try {
-        const resumeSummary = 'Resume on file';
-        const jobTitle = job.job_title ?? 'Job';
-        const jobDesc = job.job_url;
-        matchScore = await getMatchScore(resumeSummary, jobTitle, jobDesc);
+        matchScore = await getMatchScore('Resume on file', job.job_title ?? 'Job', job.job_url);
       } catch {
         matchScore = null;
       }
     }
-    const { data: prefs } = await supabase
-      .from('job_preferences')
-      .select('match_threshold')
-      .eq('user_id', job.user_id)
-      .single();
-    const threshold = (prefs as { match_threshold?: number } | null)?.match_threshold ?? 0;
+
+    const prefsDoc  = await db.collection('job_preferences').doc(job.user_id).get();
+    const threshold = (prefsDoc.exists ? prefsDoc.data()?.match_threshold : null) ?? 0;
     const shouldRecord = matchScore === null || matchScore >= threshold;
+
     if (shouldRecord) {
-      await supabase.from('applied_jobs').insert({
-        user_id: job.user_id,
+      await db.collection('applied_jobs').add({
+        user_id:          job.user_id,
         auto_apply_job_id: jobId,
-        job_url: job.job_url,
-        job_title: job.job_title,
-        company_name: job.company_name,
-        match_score: matchScore,
+        job_url:          job.job_url,
+        job_title:        job.job_title,
+        company_name:     job.company_name,
+        match_score:      matchScore,
+        applied_at:       new Date().toISOString(),
+        created_at:       new Date().toISOString(),
       });
     } else {
-      logger.info('Skipped recording applied_job (score below threshold)', {
-        jobId,
-        matchScore,
-        threshold,
-      });
+      logger.info('Skipped recording applied_job (score below threshold)', { jobId, matchScore, threshold });
     }
   }
 
   const { maxRetries } = await getSystemSettings();
   const newStatus = result.success ? 'completed' : job.retry_count + 1 >= maxRetries ? 'failed' : 'pending';
-  const newRetry = result.success ? job.retry_count : job.retry_count + 1;
+  const newRetry  = result.success ? job.retry_count : job.retry_count + 1;
 
   await updateJob(jobId, {
-    status: newStatus,
-    progress: result.success ? 100 : result.progress,
+    status:      newStatus,
+    progress:    result.success ? 100 : result.progress,
     retry_count: newRetry,
-    last_error: result.error ?? null,
+    last_error:  result.error ?? null,
   });
 
   logger.info('Job finished', { jobId, status: newStatus, success: result.success });
+}
+
+async function checkFirestoreConnection(): Promise<boolean> {
+  try {
+    await db.collection('system_settings').limit(1).get();
+    logger.info('Firestore connection OK');
+    return true;
+  } catch (err) {
+    logger.error('Firestore connection failed', { error: String(err) });
+    return false;
+  }
 }
 
 async function poll(): Promise<void> {
@@ -244,21 +234,9 @@ async function poll(): Promise<void> {
   }
 }
 
-async function checkSupabaseConnection(): Promise<boolean> {
-  try {
-    const { error } = await supabase.from('system_settings').select('key').limit(1);
-    if (error) throw new Error(error.message);
-    const url = config.supabaseUrl.replace(/^https?:\/\//, '').split('/')[0];
-    logger.info('Supabase connection OK', { host: url });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function main(): Promise<void> {
   logger.info('Worker started', { pollIntervalMs: config.pollIntervalMs });
-  await checkSupabaseConnection();
+  await checkFirestoreConnection();
   for (;;) {
     try {
       await poll();

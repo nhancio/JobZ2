@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUserId } from '@/lib/auth';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { getAdminDb } from '@/lib/firebase/admin';
 
 export async function GET(
   _request: NextRequest,
@@ -9,13 +9,13 @@ export async function GET(
   const { id } = await context.params;
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from('auto_apply_jobs')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', userId)
-    .single();
-  if (error || !data) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  return NextResponse.json(data);
+
+  const db  = getAdminDb();
+  const doc = await db.collection('auto_apply_jobs').doc(id).get();
+
+  if (!doc.exists || doc.data()?.user_id !== userId) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  return NextResponse.json({ id: doc.id, ...doc.data() });
 }

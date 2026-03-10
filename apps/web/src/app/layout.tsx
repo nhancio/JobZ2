@@ -1,29 +1,15 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import { Toaster } from 'sonner';
-import { SessionProvider } from '@/components/SessionProvider';
-import './globals.css';
-
-const inter = Inter({ subsets: ['latin'] });
+import type { Metadata } from 'next'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'JobZ2 – AI Job Auto Apply',
-  description: 'Enterprise AI-powered job auto apply agent',
-};
+  title: 'JobZ2 — Auto Apply',
+  description: 'Upload your resume and auto-apply to matching LinkedIn jobs',
+}
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <SessionProvider>
-          {children}
-          <Toaster position="top-right" richColors />
-        </SessionProvider>
-      </body>
+      <body>{children}</body>
     </html>
-  );
+  )
 }

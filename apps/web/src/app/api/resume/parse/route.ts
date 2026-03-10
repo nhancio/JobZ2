@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUserId } from '@/lib/auth';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { getAdminDb, getAdminStorage } from '@/lib/firebase/admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const runtime = 'nodejs';
@@ -18,42 +18,42 @@ export async function POST(request: NextRequest) {
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const body = await request.json().catch(() => ({}));
+  const body     = await request.json().catch(() => ({}));
   const resumeId = typeof body.resume_id === 'string' ? body.resume_id : null;
   if (!resumeId) {
     return NextResponse.json({ error: 'resume_id required' }, { status: 400 });
   }
 
-  const supabase = createAdminClient();
-  const { data: resume, error: fetchError } = await supabase
-    .from('resumes')
-    .select('id, resume_url, file_path, name')
-    .eq('id', resumeId)
-    .eq('user_id', userId)
-    .single();
+  const db  = getAdminDb();
+  const doc = await db.collection('resumes').doc(resumeId).get();
 
-  if (fetchError || !resume) {
+  if (!doc.exists || doc.data()?.user_id !== userId) {
     return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
   }
 
-  const path = (resume.file_path || resume.resume_url) as string;
-  if (!path) {
+  const resume   = doc.data()!;
+  const filePath = (resume.file_path || resume.resume_url) as string;
+  if (!filePath) {
     return NextResponse.json({ error: 'Resume file not found' }, { status: 400 });
   }
 
-  const { data: fileData, error: downloadError } = await supabase.storage
-    .from('resumes')
-    .download(path);
-
-  if (downloadError || !fileData) {
+  // Download from Firebase Storage
+  let buffer: Buffer;
+  try {
+    const bucket   = getAdminStorage().bucket();
+    // file_path is the GCS path; resume_url might be a full public URL
+    const storagePath = filePath.startsWith('resumes/') ? filePath : filePath.replace(/^https:\/\/storage\.googleapis\.com\/[^/]+\//, '');
+    const [fileData] = await bucket.file(storagePath).download();
+    buffer = fileData;
+  } catch (err) {
+    console.error('Firebase Storage download error:', err);
     return NextResponse.json({ error: 'Could not download resume file' }, { status: 500 });
   }
 
-  const buffer = Buffer.from(await fileData.arrayBuffer());
-  const base64 = buffer.toString('base64');
-  const mimeType = (path.endsWith('.pdf') && 'application/pdf') ||
-    (path.endsWith('.doc') && 'application/msword') ||
-    (path.endsWith('.docx') && 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
+  const base64   = buffer.toString('base64');
+  const mimeType = (filePath.endsWith('.pdf') && 'application/pdf') ||
+    (filePath.endsWith('.doc') && 'application/msword') ||
+    (filePath.endsWith('.docx') && 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
     'text/plain';
 
   const apiKey = process.env.GEMINI_API_KEY;
@@ -61,41 +61,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'GEMINI_API_KEY not set' }, { status: 500 });
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
+  const genAI  = new GoogleGenerativeAI(apiKey);
+  const model  = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   const result = await model.generateContent([
-    {
-      inlineData: {
-        mimeType,
-        data: base64,
-      },
-    },
+    { inlineData: { mimeType, data: base64 } },
     { text: GEMINI_PROMPT },
   ]);
 
-  const text = result.response.text()?.trim() ?? '{}';
+  const text      = result.response.text()?.trim() ?? '{}';
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   let resumeJson: Record<string, unknown> = {};
   if (jsonMatch) {
-    try {
-      resumeJson = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-    } catch {
-      resumeJson = { skills: [], job_titles: [], experience_level: null, preferred_locations: [] };
-    }
+    try { resumeJson = JSON.parse(jsonMatch[0]); } catch { /* ignore */ }
   }
-  if (!resumeJson.skills || !Array.isArray(resumeJson.skills)) resumeJson.skills = [];
-  if (!resumeJson.job_titles || !Array.isArray(resumeJson.job_titles)) resumeJson.job_titles = [];
-  if (!resumeJson.preferred_locations || !Array.isArray(resumeJson.preferred_locations)) resumeJson.preferred_locations = [];
+  if (!Array.isArray(resumeJson.skills))             resumeJson.skills = [];
+  if (!Array.isArray(resumeJson.job_titles))         resumeJson.job_titles = [];
+  if (!Array.isArray(resumeJson.preferred_locations)) resumeJson.preferred_locations = [];
 
-  const { error: updateError } = await supabase
-    .from('resumes')
-    .update({ resume_json: resumeJson, updated_at: new Date().toISOString() })
-    .eq('id', resumeId)
-    .eq('user_id', userId);
+  await db.collection('resumes').doc(resumeId).update({
+    resume_json: resumeJson,
+    updated_at:  new Date().toISOString(),
+  });
 
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
-  }
   return NextResponse.json({ resume_json: resumeJson });
 }
